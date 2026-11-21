@@ -1,0 +1,6 @@
+#ifndef FOTA_MBEDTLS_CONFIG_H
+#define FOTA_MBEDTLS_CONFIG_H
+
+#define MBEDTLS_SHA256_C
+
+#endif

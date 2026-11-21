@@ -57,6 +57,7 @@ LOCAL const UW module_tbl[] = {
 	RESETS_RESET_PIO0,		/* CYW43439 PIO-SPI */
 	RESETS_RESET_PIO1,		/* PIO allocator may select either instance */
 	RESETS_RESET_DMA,		/* CYW43439 PIO-SPI transfers */
+  RESETS_RESET_TIMER,
 #endif
 
 #if USE_PTMR
