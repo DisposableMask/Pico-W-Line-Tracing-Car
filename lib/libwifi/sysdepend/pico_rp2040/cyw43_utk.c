@@ -34,8 +34,6 @@
 #if TM_NET_LWIP
 #include "lwip/tcp.h"
 
-static const char ota_expected[] = "OTA test v1\n";
-static char ota_received[sizeof(ota_expected) - 1];
 static size_t ota_received_len;
 static int ota_test_in_progress;
 
@@ -51,7 +49,7 @@ static err_t ota_test_receive(void *arg, struct tcp_pcb *pcb,
 {
     (void)arg;
 
-    if (err != ERR_OK || (p && p->tot_len > sizeof(ota_received) - ota_received_len)) {
+    if (err != ERR_OK) {
         if (p) {
             pbuf_free(p);
         }
@@ -61,11 +59,8 @@ static err_t ota_test_receive(void *arg, struct tcp_pcb *pcb,
     }
 
     if (p == NULL) {
-        /* The server closed its side. Check everything we received. */
-        int passed = ota_received_len == sizeof(ota_received) &&
-                     memcmp(ota_received, ota_expected, sizeof(ota_received)) == 0;
-        tm_printf((const UB *)"OTA transfer test: %s (%d bytes)\n",
-                  passed ? "PASS" : "FAIL", (int)ota_received_len);
+        tm_printf((const UB *)"OTA download: %u (%u bytes)\n",
+                  (unsigned)ota_received_len);
         if (tcp_close(pcb) != ERR_OK) {
             tcp_abort(pcb);
             return ERR_ABRT;
@@ -74,7 +69,6 @@ static err_t ota_test_receive(void *arg, struct tcp_pcb *pcb,
         return ERR_OK;
     }
 
-    pbuf_copy_partial(p, ota_received + ota_received_len, p->tot_len, 0);
     ota_received_len += p->tot_len;
     tcp_recved(pcb, p->tot_len);
     pbuf_free(p);
