@@ -30,6 +30,84 @@
  * actually visible on the console instead of only sitting in radio_status. */
 #include <tm/tmonitor.h>
 
+// Tests over-the-air firmware update by letting Pico ping desktop (current IP address is fixed)
+#if TM_NET_LWIP
+#include "lwip/tcp.h"
+
+static const char ota_expected[] = "OTA test v1\n";
+static char ota_received[sizeof(ota_expected) - 1];
+static size_t ota_received_len;
+static int ota_test_in_progress;
+
+static void ota_test_error(void *arg, err_t err)
+{
+    (void)arg;
+    ota_test_in_progress = 0;
+    tm_printf((const UB *)"OTA transfer test: TCP error %d\n", (int)err);
+}
+
+static err_t ota_test_receive(void *arg, struct tcp_pcb *pcb,
+                              struct pbuf *p, err_t err)
+{
+    (void)arg;
+
+    if (err != ERR_OK || (p && p->tot_len > sizeof(ota_received) - ota_received_len)) {
+        if (p) {
+            pbuf_free(p);
+        }
+        tm_printf((const UB *)"OTA transfer test: invalid data\n");
+        tcp_abort(pcb);
+        return ERR_ABRT;
+    }
+
+    if (p == NULL) {
+        /* The server closed its side. Check everything we received. */
+        int passed = ota_received_len == sizeof(ota_received) &&
+                     memcmp(ota_received, ota_expected, sizeof(ota_received)) == 0;
+        tm_printf((const UB *)"OTA transfer test: %s (%d bytes)\n",
+                  passed ? "PASS" : "FAIL", (int)ota_received_len);
+        if (tcp_close(pcb) != ERR_OK) {
+            tcp_abort(pcb);
+            return ERR_ABRT;
+        }
+        ota_test_in_progress = 0;
+        return ERR_OK;
+    }
+
+    pbuf_copy_partial(p, ota_received + ota_received_len, p->tot_len, 0);
+    ota_received_len += p->tot_len;
+    tcp_recved(pcb, p->tot_len);
+    pbuf_free(p);
+    return ERR_OK;
+}
+
+static void ota_test_start(void)
+{
+    ip_addr_t pc_ip;
+    if (!ipaddr_aton("192.168.1.66", &pc_ip)) {
+        tm_printf((const UB *)"OTA transfer test: invalid PC IP\n");
+        return;
+    }
+
+    struct tcp_pcb *pcb = tcp_new();
+    if (pcb == NULL) {
+        tm_printf((const UB *)"OTA transfer test: TCP allocation failed\n");
+        return;
+    }
+
+    ota_received_len = 0;
+    tcp_recv(pcb, ota_test_receive);
+    err_t err = tcp_connect(pcb, &pc_ip, 8080, NULL);
+    if (err != ERR_OK) {
+        tcp_abort(pcb);
+        ota_test_error(NULL, err);
+        return;
+    }
+    tcp_err(pcb, ota_test_error);
+    ota_test_in_progress = 1;
+}
+#endif
+
 #define CYW43_POLL_MS        2
 
 /* An association can fail transiently -- a busy channel, a weak beacon, an AP
@@ -333,6 +411,19 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
         cyw43_thread_exit();
 #if TM_NET_LWIP
         sys_check_timeouts();
+        static uint64_t ota_start_at;
+        if (radio_status.link_status != CYW43_LINK_UP) {
+            ota_start_at = 0;
+        } else if (!ota_test_in_progress) {
+            uint64_t now = time_us_64();
+
+            if (ota_start_at == 0) {
+                ota_start_at = now + 5000000u;
+            } else if (now >= ota_start_at) {
+                ota_start_at = 0;
+                ota_test_start();
+            }
+        }
 #if TM_MQTT
         /* mqtt_utk_start() is idempotent (see its own connecting/is_connected
          * guard), so calling it on every poll iteration once the link is up
