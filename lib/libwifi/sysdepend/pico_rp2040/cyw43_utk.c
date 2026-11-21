@@ -45,6 +45,7 @@ static struct {
     size_t page_used;
     size_t expected;
     size_t written;
+    unsigned next_progress;
     bool staging_started;
     bool verify_pending;
 } fota_tcp;
@@ -53,6 +54,8 @@ static void fota_tcp_reset(void)
 {
     if (fota_tcp.staging_started) {
         fota_stage_abort();
+        tm_printf((const UB *)"FOTA: update discarded (%u/%u bytes staged)\n",
+                  (unsigned)fota_tcp.written, (unsigned)fota_tcp.expected);
     }
 
     memset(&fota_tcp, 0, sizeof(fota_tcp));
@@ -90,6 +93,9 @@ static bool fota_tcp_consume(const struct pbuf *p)
                     return false;
                 }
                 fota_tcp.staging_started = true;
+                fota_tcp.next_progress = 10;
+                tm_printf((const UB *)"FOTA: receiving %u bytes (0%%)\n",
+                          (unsigned)fota_tcp.expected);
                 if (fota_stage_begin(fota_tcp.expected) != 0) {
                     return false;
                 }
@@ -152,6 +158,15 @@ static err_t fota_tcp_receive(void *arg, struct tcp_pcb *pcb,
 
     tcp_recved(pcb, p->tot_len);
     pbuf_free(p);
+
+    if (fota_tcp.staging_started) {
+        unsigned percent = (unsigned)(fota_tcp.written * 100u / fota_tcp.expected);
+        if (percent >= fota_tcp.next_progress) {
+            tm_printf((const UB *)"FOTA: staged %u/%u bytes (%u%%)\n",
+                      (unsigned)fota_tcp.written, (unsigned)fota_tcp.expected, percent);
+            fota_tcp.next_progress = (percent / 10u + 1u) * 10u;
+        }
+    }
     return ERR_OK;
 }
 
@@ -168,6 +183,7 @@ static err_t fota_tcp_connected(void *arg, struct tcp_pcb *pcb, err_t err)
 static void fota_tcp_poll(bool link_up)
 {
     if (fota_tcp.verify_pending) {
+        tm_printf((const UB *)"FOTA: verifying image before reboot\n");
         fota_stage_verify_and_reboot(fota_tcp.expected);
         /* A successful update reboots. Returning means it failed. */
         fota_tcp_reset();

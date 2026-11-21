@@ -65,22 +65,31 @@ def _main():
 
         user_input = " "
         while user_input:
-            user_input = input("Press Enter to trigger update: ")
+            user_input = input("Press [Enter] again to update firmware")
 
         image = Path(args.binary_file).read_bytes()
         if len(image) < 512 or len(image) % 256:
             raise ValueError("Expected a page-aligned FOTA image with a hash trailer")
 
+        total = len(image)
+        next_progress = 10
+        print(f"Sending {total} bytes (0%)", flush=True)
         with new_fd:
-            new_fd.sendall(struct.pack("!I", len(image)))
-            for offset in range(0, len(image), BINARY_CHUNK_SIZE):
+            new_fd.sendall(struct.pack("!I", total))
+            for offset in range(0, total, BINARY_CHUNK_SIZE):
+                chunk = image[offset:offset + BINARY_CHUNK_SIZE]
                 time.sleep(args.chunk_delay)
-                new_fd.sendall(image[offset:offset + BINARY_CHUNK_SIZE])
+                new_fd.sendall(chunk)
+                sent = offset + len(chunk)
+                percent = sent * 100 // total
+                if percent >= next_progress:
+                    print(f"Sent {sent}/{total} bytes ({percent}%)", flush=True)
+                    next_progress = (percent // 10 + 1) * 10
             new_fd.shutdown(socket.SHUT_WR)
-        print(f"Sent {len(image)} bytes")
+        print("Transfer sent. Check the Pico's serial monitor for verification and reboot.")
 
-    except socket.error as e:
-        print(f"Error accepting connection: {e}")
+    except OSError as e:
+        print(f"Update connection error: {e}")
         sys.exit(1)
 
     sys.exit(0)
