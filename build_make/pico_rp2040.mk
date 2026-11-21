@@ -117,6 +117,13 @@ endif
 # only the banner in the log revealed it.
 #
 EXE_FILE := mtk3pico_smp$(SMP)_$(CONSOLE)$(WIFI_SUFFIX)$(NET_SUFFIX)$(MQTT_SUFFIX)$(CRASH_SUFFIX)$(TEST_SUFFIX)
+FOTA ?= 0
+ifeq ($(FOTA),1)
+ifneq ($(SMP)$(NET)$(WIFI),1lwipcyw43)
+$(error FOTA=1 requires SMP=1 NET=lwip WIFI=cyw43)
+endif
+EXE_FILE := $(EXE_FILE)_fota
+endif
 
 GCC := arm-none-eabi-gcc
 AS := arm-none-eabi-gcc
@@ -152,8 +159,6 @@ $(E2U): ../tools/elf2uf2/main.cpp
 	@echo 'Building host tool: $@'
 	c++ -O2 -std=c++14 -I../tools/elf2uf2 -o $@ $<
 
-$(EXE_FILE).elf: | $(E2U)
-
 CFLAGS := -mcpu=cortex-m0plus -mthumb -ffreestanding\
     -std=gnu11 \
     -O2 -g3 \
@@ -170,7 +175,7 @@ LFLAGS := -mcpu=cortex-m0plus -mthumb -ffreestanding \
     -O2 -g3 \
     -mfloat-abi=soft \
 
-LNKFILE := "../etc/linker/pico_rp2040/tkernel_map.ld"
+LNKFILE := ../etc/linker/pico_rp2040/tkernel_map.ld
 
 # Applied here, after CFLAGS/ASFLAGS are assigned with ':=', which would
 # otherwise discard anything appended above.
@@ -211,7 +216,7 @@ endif
 # before any recipe executes.
 ################################################################################
 
-PROFILE_ID := smp$(SMP)-$(CONSOLE)-wifi$(WIFI)-net$(NET)-mqtt$(MQTT)-crash$(CRASH_REPORT)-test$(TEST)
+PROFILE_ID := smp$(SMP)-$(CONSOLE)-wifi$(WIFI)-net$(NET)-mqtt$(MQTT)-crash$(CRASH_REPORT)-test$(TEST)-fota$(FOTA)
 PROFILE_FILE := .build_profile
 
 ifneq ($(strip $(shell cat $(PROFILE_FILE) 2>/dev/null)),$(PROFILE_ID))
@@ -302,6 +307,9 @@ $(error CYW43 driver not found below $(PICO_SDK_PATH); initialize the pico-sdk s
 endif
 
 WIFI_LOCAL_SRCS := cyw43_utk.c cyw43_utk_kernel.c cyw43_utk_compat.c
+ifeq ($(FOTA),1)
+WIFI_LOCAL_SRCS += fota_stage.c
+endif
 WIFI_LOCAL_OBJS := $(addprefix ./mtkernel_3/lib/libwifi/sysdepend/pico_rp2040/,$(WIFI_LOCAL_SRCS:.c=.o))
 
 CYW43_OBJS := ./mtkernel_3/cyw43/cyw43_ll.o \
@@ -352,6 +360,7 @@ CFLAGS += -DTM_WIFI_CYW43=1 -DCYW43_LWIP=$(if $(filter lwip,$(NET)),1,0) -DCYW43
           -DCYW43_DEFAULT_PIN_WL_CS=25u \
           -DNDEBUG -ffunction-sections -fdata-sections $(WIFI_INCLUDES)
 LFLAGS += -Wl,--gc-sections
+
 
 OBJS += $(WIFI_LOCAL_OBJS) $(CYW43_OBJS)
 C_DEPS += $(WIFI_LOCAL_OBJS:.o=.d) $(CYW43_OBJS:.o=.d)
@@ -412,19 +421,6 @@ LWIP_CORE_SRCS := core/init.c core/def.c core/dns.c core/inet_chksum.c \
                    core/ipv4/etharp.c core/ipv4/icmp.c core/ipv4/igmp.c \
                    core/ipv4/ip4_frag.c core/ipv4/ip4.c core/ipv4/ip4_addr.c \
                    netif/ethernet.c
-# allow .uf2 file transfer over the internet
-LWIP_CORE_SRCS += apps/http/http_client.c
-PICO_PRINTF_DIR := $(PICO_SDK_PATH)/src/rp2_common/pico_printf
-PICO_PRINTF_OBJ := ./mtkernel_3/lwip/pico_printf.o
-
-# Use the SDK's buffer formatter for lwIP HTTP requests.
-LFLAGS += -Wl,--wrap=snprintf
-OBJS += $(PICO_PRINTF_OBJ)
-C_DEPS += $(PICO_PRINTF_OBJ:.o=.d)
-
-$(PICO_PRINTF_OBJ): $(PICO_PRINTF_DIR)/printf.c
-	@mkdir -p "$(@D)"
-	$(GCC) $(CFLAGS) -D$(TARGET) $(INCPATH) -I"$(PICO_PRINTF_DIR)/include" -DPICO_PRINTF_SUPPORT_FLOAT=0 -MF"$(@:%.o=%.d)" -MT"$@" -c -o "$@" "$<"
 
 LWIP_CORE_OBJS := $(addprefix ./mtkernel_3/lwip/,$(LWIP_CORE_SRCS:.c=.o))
 

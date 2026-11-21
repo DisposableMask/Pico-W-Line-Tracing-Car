@@ -30,51 +30,184 @@
  * actually visible on the console instead of only sitting in radio_status. */
 #include <tm/tmonitor.h>
 
-/* Download a firmware image over HTTP and report its byte count. */
-#if TM_NET_LWIP
-#include "lwip/apps/http_client.h"
+#if TM_NET_LWIP && defined(APP_FOTA_TCP)
+#include "lwip/tcp.h"
+#include "fota_stage.h"
 
-static int ota_test_in_progress;
+enum { FOTA_PAGE_SIZE = 256 };
 
-static err_t ota_http_receive(void *arg, struct altcp_pcb *pcb, struct pbuf *p, err_t err)
+static struct {
+    struct tcp_pcb *pcb;
+    uint64_t retry_at;
+    uint8_t header[4];
+    uint8_t page[FOTA_PAGE_SIZE];
+    size_t header_used;
+    size_t page_used;
+    size_t expected;
+    size_t written;
+    bool staging_started;
+    bool verify_pending;
+} fota_tcp;
+
+static void fota_tcp_reset(void)
 {
-    (void)arg;
-    if (p != NULL) {
-        altcp_recved(pcb, p->tot_len);
-        pbuf_free(p);
+    if (fota_tcp.staging_started) {
+        fota_stage_abort();
     }
-    return err;
+
+    memset(&fota_tcp, 0, sizeof(fota_tcp));
+    fota_tcp.retry_at = time_us_64() + 3000000u;
 }
 
-static void ota_http_done(void *arg, httpc_result_t result, u32_t received, u32_t status, err_t err)
+static void fota_tcp_error(void *arg, err_t err)
 {
     (void)arg;
-    ota_test_in_progress = 0;
-    tm_printf(
-        (const UB *)"OTA HTTP: status=%u, bytes=%u, result=%d, err=%d\n",
-        (unsigned)status, (unsigned)received, (int)result, (int)err
-    );
+    (void)err;
+    /* lwIP has already freed the PCB. */
+    fota_tcp_reset();
 }
 
-static const httpc_connection_t ota_http_settings = {
-    .result_fn = ota_http_done,
-};
-
-static void ota_test_start(void)
+static err_t fota_tcp_drop(struct tcp_pcb *pcb)
 {
-    ip_addr_t pc_ip;
-    if (!ipaddr_aton("192.168.1.66", &pc_ip)) {
-        tm_printf((const UB *)"OTA transfer test: invalid PC IP\n");
+    tcp_err(pcb, NULL);
+    tcp_abort(pcb);
+    fota_tcp_reset();
+    return ERR_ABRT;
+}
+
+static bool fota_tcp_consume(const struct pbuf *p)
+{
+    for (u16_t offset = 0; offset < p->tot_len;) {
+        if (fota_tcp.header_used < sizeof(fota_tcp.header)) {
+            fota_tcp.header[fota_tcp.header_used++] = pbuf_get_at(p, offset++);
+            if (fota_tcp.header_used == sizeof(fota_tcp.header)) {
+                const uint8_t *h = fota_tcp.header;
+                fota_tcp.expected = ((uint32_t)h[0] << 24) |
+                                    ((uint32_t)h[1] << 16) |
+                                    ((uint32_t)h[2] << 8) | h[3];
+                if (fota_tcp.expected < 2 * FOTA_PAGE_SIZE ||
+                    fota_tcp.expected % FOTA_PAGE_SIZE != 0) {
+                    return false;
+                }
+                fota_tcp.staging_started = true;
+                if (fota_stage_begin(fota_tcp.expected) != 0) {
+                    return false;
+                }
+            }
+            continue;
+        }
+
+        size_t take = sizeof(fota_tcp.page) - fota_tcp.page_used;
+        size_t available = p->tot_len - offset;
+        if (take > available) {
+            take = available;
+        }
+        if (take > fota_tcp.expected - fota_tcp.written - fota_tcp.page_used ||
+            pbuf_copy_partial(p, fota_tcp.page + fota_tcp.page_used,
+                              (u16_t)take, offset) != take) {
+            return false;
+        }
+
+        fota_tcp.page_used += take;
+        offset += (u16_t)take;
+        if (fota_tcp.page_used == sizeof(fota_tcp.page)) {
+            if (fota_stage_write_page(fota_tcp.written, fota_tcp.page) != 0) {
+                return false;
+            }
+            fota_tcp.written += sizeof(fota_tcp.page);
+            fota_tcp.page_used = 0;
+        }
+    }
+    return true;
+}
+
+static err_t fota_tcp_receive(void *arg, struct tcp_pcb *pcb,
+                              struct pbuf *p, err_t err)
+{
+    (void)arg;
+    if (p == NULL && err == ERR_OK) {
+        tcp_err(pcb, NULL);
+        tcp_recv(pcb, NULL);
+        if (tcp_close(pcb) != ERR_OK) {
+            return fota_tcp_drop(pcb);
+        }
+
+        fota_tcp.pcb = NULL;
+        if (fota_tcp.staging_started &&
+            fota_tcp.written == fota_tcp.expected &&
+            fota_tcp.page_used == 0) {
+            fota_tcp.verify_pending = true;
+        } else {
+            fota_tcp_reset();
+        }
+        return ERR_OK;
+    }
+
+    if (err != ERR_OK || !fota_tcp_consume(p)) {
+        if (p != NULL) {
+            pbuf_free(p);
+        }
+        return fota_tcp_drop(pcb);
+    }
+
+    tcp_recved(pcb, p->tot_len);
+    pbuf_free(p);
+    return ERR_OK;
+}
+
+static err_t fota_tcp_connected(void *arg, struct tcp_pcb *pcb, err_t err)
+{
+    (void)arg;
+    if (err != ERR_OK) {
+        return fota_tcp_drop(pcb);
+    }
+    tcp_recv(pcb, fota_tcp_receive);
+    return ERR_OK;
+}
+
+static void fota_tcp_poll(bool link_up)
+{
+    if (fota_tcp.verify_pending) {
+        fota_stage_verify_and_reboot(fota_tcp.expected);
+        /* A successful update reboots. Returning means it failed. */
+        fota_tcp_reset();
         return;
     }
 
-    err_t err = httpc_get_file(
-        &pc_ip, 8080, "/mtk3pico_smp1_usb_cdc_wifi_lwip.uf2", // this is hardcoded
-        &ota_http_settings, ota_http_receive, NULL, NULL);
-    if (err == ERR_OK) {
-        ota_test_in_progress = 1;
-    } else {
-        tm_printf((const UB *)"OTA HTTP: could not start GET, err=%d\n", (int)err);
+    if (!link_up) {
+        if (fota_tcp.pcb != NULL) {
+            (void)fota_tcp_drop(fota_tcp.pcb);
+        }
+        return;
+    }
+
+    static bool confirmation_checked;
+    static bool firmware_confirmed;
+    if (!confirmation_checked) {
+        confirmation_checked = true;
+        firmware_confirmed = fota_confirm_running_image() == 0;
+    }
+    if (!firmware_confirmed) {
+        return;
+    }
+
+    if (fota_tcp.pcb != NULL || time_us_64() < fota_tcp.retry_at) {
+        return;
+    }
+
+    ip_addr_t server;
+    ipaddr_aton("192.168.1.66", &server);
+
+    struct tcp_pcb *pcb = tcp_new();
+    if (pcb == NULL) {
+        fota_tcp_reset();
+        return;
+    }
+
+    fota_tcp.pcb = pcb;
+    tcp_err(pcb, fota_tcp_error);
+    if (tcp_connect(pcb, &server, 3490, fota_tcp_connected) != ERR_OK) {
+        (void)fota_tcp_drop(pcb);
     }
 }
 #endif
@@ -261,16 +394,13 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
     (void)exinf;
     radio_status.owner_prc = (uint32_t)tk_get_prc();
 
-    tm_printf((UB*)"wifi: cyw43_utk_task starting (proc %d)\n",
-              (int)radio_status.owner_prc);
+    tm_printf((UB*)"wifi: setting up radio ...\n");
 
 #if TM_NET_LWIP
     lwip_init();
 #endif
 
-    tm_printf((UB*)"wifi: cyw43_init() ...\n");
     cyw43_init(&cyw43_state);
-    tm_printf((UB*)"wifi: cyw43_init() returned, bringing interface up ...\n");
     cyw43_thread_enter();
     cyw43_wifi_set_up(&cyw43_state, CYW43_ITF_STA, true,
                       CYW43_COUNTRY_WORLDWIDE);
@@ -382,22 +512,9 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
         cyw43_thread_exit();
 #if TM_NET_LWIP
         sys_check_timeouts();
-        static uint64_t ota_start_at;
-        static unsigned ota_attempt;
-        if (radio_status.link_status != CYW43_LINK_UP) {
-            ota_start_at = 0;
-        } else if (!ota_test_in_progress) {
-            uint64_t now = time_us_64();
-
-            if (ota_start_at == 0) {
-                ota_start_at = now + 5000000u;
-            } else if (now >= ota_start_at) {
-                ota_start_at = 0;
-                ++ota_attempt;
-                tm_printf((const UB *)"OTA test: connecting to PC:8080 (attempt %u)\n", ota_attempt);
-                ota_test_start();
-            }
-        }
+#if defined(APP_FOTA_TCP)
+        fota_tcp_poll(radio_status.link_status == CYW43_LINK_UP);
+#endif
 #if TM_MQTT
         /* mqtt_utk_start() is idempotent (see its own connecting/is_connected
          * guard), so calling it on every poll iteration once the link is up

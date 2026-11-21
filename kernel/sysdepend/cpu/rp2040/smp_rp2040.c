@@ -13,6 +13,10 @@
 #include "smp_lock.h"
 #include <tk/smp.h>
 
+#if defined(APP_FOTA_TCP)
+#include "rover_flash.h"
+#endif
+
 #if TK_SUPPORT_SMP
 
 /* ------------------------------------------------------------------------ */
@@ -286,6 +290,78 @@ LOCAL void knl_smp_core0_ipi( UINT intno )
 	}
 }
 
+#if defined(APP_FOTA_TCP)
+#define KNL_IPI_FLASH_PARK (1U << 4)
+#define FLASH_PARK_TIMEOUT_US 100000u
+#define RP2040_TIMER_RAW_LOW (*(volatile UW *)0x40054028u)
+
+static volatile UW flash_park_requested;
+static volatile UW flash_core1_parked;
+static BOOL flash_lockout_failed;
+
+static __attribute__((noinline, section(".time_critical.rover_flash_park")))
+void rover_flash_park_core1(void)
+{
+    UW primask;
+    __asm__ volatile ("mrs %0, primask\n\tcpsid i"
+                      : "=r"(primask) :: "memory");
+
+    if (flash_park_requested) {
+        /* Acknowledge only after entering SRAM and masking interrupts. */
+        __asm__ volatile ("dmb" ::: "memory");
+        flash_core1_parked = 1;
+        while (flash_park_requested) {
+            __asm__ volatile ("nop" ::: "memory");
+        }
+        __asm__ volatile ("dmb" ::: "memory");
+        flash_core1_parked = 0;
+    }
+
+    __asm__ volatile ("msr primask, %0" :: "r"(primask) : "memory");
+}
+
+int rover_flash_execute(void (*operation)(void *), void *arg)
+{
+    if (SIO_CPUID != 0 || !operation) {
+        return -1;
+    }
+
+    UW primask;
+    __asm__ volatile ("mrs %0, primask\n\tcpsid i"
+                      : "=r"(primask) :: "memory");
+    if (flash_lockout_failed) {
+        __asm__ volatile ("msr primask, %0" :: "r"(primask) : "memory");
+        return -1;
+    }
+
+    flash_park_requested = 1;
+    knl_ipi_send(1, KNL_IPI_FLASH_PARK);
+
+    const UW start = RP2040_TIMER_RAW_LOW;
+    while (!flash_core1_parked) {
+        if ((UW)(RP2040_TIMER_RAW_LOW - start) >= FLASH_PARK_TIMEOUT_US) {
+            /* Latch failure so a late IPI cannot authorize a later write. */
+            flash_lockout_failed = TRUE;
+            flash_park_requested = 0;
+            __asm__ volatile ("msr primask, %0" :: "r"(primask) : "memory");
+            return -1;
+        }
+    }
+
+    knl_smp_barrier();
+    operation(arg);
+    /* The SDK flash operation restores XIP before returning. */
+    knl_smp_barrier();
+    flash_park_requested = 0;
+    while (flash_core1_parked) {
+        __asm__ volatile ("nop" ::: "memory");
+    }
+
+    __asm__ volatile ("msr primask, %0" :: "r"(primask) : "memory");
+    return 0;
+}
+#endif
+
 /*
  * Core 1's IPI handler.
  *
@@ -304,6 +380,11 @@ LOCAL void knl_smp_core1_ipi( UINT intno )
 	(void)intno;
 
 	reasons = knl_ipi_take();
+#if defined(APP_FOTA_TCP)
+	if ( (reasons & KNL_IPI_FLASH_PARK) != 0 ) {
+		rover_flash_park_core1();
+	}
+#endif
 
 	if ( (reasons & KNL_IPI_PING) != 0 ) {
 		knl_smp_ping_recv++;

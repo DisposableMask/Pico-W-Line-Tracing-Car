@@ -31,6 +31,9 @@ include mtkernel_3/device/subdir.mk
 
 ifeq ($(TARGET), _PICO_RP2040_)
 include pico_rp2040.mk
+ifeq ($(FOTA),1)
+include fota.mk
+endif
 endif
 
 -include mtkernel_3/app_program/subdir.mk
@@ -56,19 +59,25 @@ endif
 endif
 
 # All EXE_FILE
-all: $(EXE_FILE).elf
+all: $(EXE_FILE).uf2
 
-$(EXE_FILE).elf: $(OBJS)
+.PHONY: both
+both:
+	$(MAKE) FOTA=0 all
+	$(MAKE) FOTA=1 all
+
+$(EXE_FILE).elf: $(OBJS) $(LNKFILE) $(FOTA_LAYOUT)
 	@echo 'Linker: $@'
-	$(LINK)  $(LFLAGS) -T $(LNKFILE) -Wl,-Map,"$(EXE_FILE).map" -o "$(EXE_FILE).elf" $(OBJS)
+	$(LINK)  $(LFLAGS) -T "$(LNKFILE)" -Wl,-Map,"$(EXE_FILE).map" -o "$(EXE_FILE).elf" $(OBJS)
 	@echo 'Finished building target: $@'
 ifneq ($(SIZE),)
 	$(SIZE) $(EXE_FILE).elf
 endif
-ifneq ($(E2U),)
-	$(E2U) $(EXE_FILE).elf $(EXE_FILE).uf2
+
+ifeq ($(FOTA),0)
+$(EXE_FILE).uf2: $(EXE_FILE).elf | $(E2U)
+	$(E2U) "$<" "$@"
 endif
-	@echo ' '
 
 # Other EXE_FILEs
 clean:
