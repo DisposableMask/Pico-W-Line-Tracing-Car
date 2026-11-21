@@ -30,60 +30,35 @@
  * actually visible on the console instead of only sitting in radio_status. */
 #include <tm/tmonitor.h>
 
-// Tests over-the-air firmware update by letting Pico ping desktop (current IP address is fixed)
+/* Download a firmware image over HTTP and report its byte count. */
 #if TM_NET_LWIP
-#include "lwip/tcp.h"
+#include "lwip/apps/http_client.h"
 
-static size_t ota_received_len;
 static int ota_test_in_progress;
 
-static void ota_test_error(void *arg, err_t err)
+static err_t ota_http_receive(void *arg, struct altcp_pcb *pcb, struct pbuf *p, err_t err)
 {
     (void)arg;
-    ota_test_in_progress = 0;
-    tm_printf((const UB *)"OTA transfer test: TCP error %d. Will retry while Wi-Fi is up.\n", (int)err);
-}
-
-static err_t ota_test_connected(void *arg, struct tcp_pcb *pcb, err_t err)
-{
-    (void)arg;
-    (void)pcb;
-    if (err == ERR_OK) {
-        tm_printf((const UB *)"OTA test: connected. Receiving file.\n");
+    if (p != NULL) {
+        altcp_recved(pcb, p->tot_len);
+        pbuf_free(p);
     }
     return err;
 }
 
-static err_t ota_test_receive(void *arg, struct tcp_pcb *pcb,
-                              struct pbuf *p, err_t err)
+static void ota_http_done(void *arg, httpc_result_t result, u32_t received, u32_t status, err_t err)
 {
     (void)arg;
-
-    if (err != ERR_OK) {
-        if (p) {
-            pbuf_free(p);
-        }
-        tm_printf((const UB *)"OTA transfer test: invalid data\n");
-        tcp_abort(pcb);
-        return ERR_ABRT;
-    }
-
-    if (p == NULL) {
-        tm_printf((const UB *)"OTA test: download ended, received %u bytes\n",
-                  (unsigned)ota_received_len);
-        if (tcp_close(pcb) != ERR_OK) {
-            tcp_abort(pcb);
-            return ERR_ABRT;
-        }
-        ota_test_in_progress = 0;
-        return ERR_OK;
-    }
-
-    ota_received_len += p->tot_len;
-    tcp_recved(pcb, p->tot_len);
-    pbuf_free(p);
-    return ERR_OK;
+    ota_test_in_progress = 0;
+    tm_printf(
+        (const UB *)"OTA HTTP: status=%u, bytes=%u, result=%d, err=%d\n",
+        (unsigned)status, (unsigned)received, (int)result, (int)err
+    );
 }
+
+static const httpc_connection_t ota_http_settings = {
+    .result_fn = ota_http_done,
+};
 
 static void ota_test_start(void)
 {
@@ -93,22 +68,14 @@ static void ota_test_start(void)
         return;
     }
 
-    struct tcp_pcb *pcb = tcp_new();
-    if (pcb == NULL) {
-        tm_printf((const UB *)"OTA transfer test: TCP allocation failed\n");
-        return;
+    err_t err = httpc_get_file(
+        &pc_ip, 8080, "/mtk3pico_smp1_usb_cdc_wifi_lwip.uf2", // this is hardcoded
+        &ota_http_settings, ota_http_receive, NULL, NULL);
+    if (err == ERR_OK) {
+        ota_test_in_progress = 1;
+    } else {
+        tm_printf((const UB *)"OTA HTTP: could not start GET, err=%d\n", (int)err);
     }
-
-    ota_received_len = 0;
-    tcp_recv(pcb, ota_test_receive);
-    err_t err = tcp_connect(pcb, &pc_ip, 8080, ota_test_connected);
-    if (err != ERR_OK) {
-        tcp_abort(pcb);
-        ota_test_error(NULL, err);
-        return;
-    }
-    tcp_err(pcb, ota_test_error);
-    ota_test_in_progress = 1;
 }
 #endif
 

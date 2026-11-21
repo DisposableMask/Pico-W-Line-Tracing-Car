@@ -412,6 +412,20 @@ LWIP_CORE_SRCS := core/init.c core/def.c core/dns.c core/inet_chksum.c \
                    core/ipv4/etharp.c core/ipv4/icmp.c core/ipv4/igmp.c \
                    core/ipv4/ip4_frag.c core/ipv4/ip4.c core/ipv4/ip4_addr.c \
                    netif/ethernet.c
+# allow .uf2 file transfer over the internet
+LWIP_CORE_SRCS += apps/http/http_client.c
+PICO_PRINTF_DIR := $(PICO_SDK_PATH)/src/rp2_common/pico_printf
+PICO_PRINTF_OBJ := ./mtkernel_3/lwip/pico_printf.o
+
+# Use the SDK's buffer formatter for lwIP HTTP requests.
+LFLAGS += -Wl,--wrap=snprintf
+OBJS += $(PICO_PRINTF_OBJ)
+C_DEPS += $(PICO_PRINTF_OBJ:.o=.d)
+
+$(PICO_PRINTF_OBJ): $(PICO_PRINTF_DIR)/printf.c
+	@mkdir -p "$(@D)"
+	$(GCC) $(CFLAGS) -D$(TARGET) $(INCPATH) -I"$(PICO_PRINTF_DIR)/include" -DPICO_PRINTF_SUPPORT_FLOAT=0 -MF"$(@:%.o=%.d)" -MT"$@" -c -o "$@" "$<"
+
 LWIP_CORE_OBJS := $(addprefix ./mtkernel_3/lwip/,$(LWIP_CORE_SRCS:.c=.o))
 
 LWIP_PORT_OBJS := ./mtkernel_3/lib/liblwip/sysdepend/pico_rp2040/sys_arch.o
