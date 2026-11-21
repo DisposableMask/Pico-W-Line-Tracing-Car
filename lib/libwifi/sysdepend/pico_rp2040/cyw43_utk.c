@@ -41,7 +41,17 @@ static void ota_test_error(void *arg, err_t err)
 {
     (void)arg;
     ota_test_in_progress = 0;
-    tm_printf((const UB *)"OTA transfer test: TCP error %d\n", (int)err);
+    tm_printf((const UB *)"OTA transfer test: TCP error %d. Will retry while Wi-Fi is up.\n", (int)err);
+}
+
+static err_t ota_test_connected(void *arg, struct tcp_pcb *pcb, err_t err)
+{
+    (void)arg;
+    (void)pcb;
+    if (err == ERR_OK) {
+        tm_printf((const UB *)"OTA test: connected. Receiving file.\n");
+    }
+    return err;
 }
 
 static err_t ota_test_receive(void *arg, struct tcp_pcb *pcb,
@@ -59,7 +69,7 @@ static err_t ota_test_receive(void *arg, struct tcp_pcb *pcb,
     }
 
     if (p == NULL) {
-        tm_printf((const UB *)"OTA download: %u (%u bytes)\n",
+        tm_printf((const UB *)"OTA test: download ended, received %u bytes\n",
                   (unsigned)ota_received_len);
         if (tcp_close(pcb) != ERR_OK) {
             tcp_abort(pcb);
@@ -91,7 +101,7 @@ static void ota_test_start(void)
 
     ota_received_len = 0;
     tcp_recv(pcb, ota_test_receive);
-    err_t err = tcp_connect(pcb, &pc_ip, 8080, NULL);
+    err_t err = tcp_connect(pcb, &pc_ip, 8080, ota_test_connected);
     if (err != ERR_OK) {
         tcp_abort(pcb);
         ota_test_error(NULL, err);
@@ -406,6 +416,7 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
 #if TM_NET_LWIP
         sys_check_timeouts();
         static uint64_t ota_start_at;
+        static unsigned ota_attempt;
         if (radio_status.link_status != CYW43_LINK_UP) {
             ota_start_at = 0;
         } else if (!ota_test_in_progress) {
@@ -415,6 +426,8 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
                 ota_start_at = now + 5000000u;
             } else if (now >= ota_start_at) {
                 ota_start_at = 0;
+                ++ota_attempt;
+                tm_printf((const UB *)"OTA test: connecting to PC:8080 (attempt %u)\n", ota_attempt);
                 ota_test_start();
             }
         }
