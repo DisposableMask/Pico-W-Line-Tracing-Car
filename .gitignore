@@ -28,3 +28,6 @@ config/wifi_secrets.h
 
 # VScode
 .vscode/*
+
+# FOTA Related
+send_update.bat
