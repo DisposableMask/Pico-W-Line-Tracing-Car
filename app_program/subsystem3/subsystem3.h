@@ -36,6 +36,13 @@ typedef struct ir_snapshot_t {
 
 
 /* Add IR reading type and getter here once interface is ready */
-ER ir_bench_start(void);
+
+#define IR_SAMPLE_REQUESTED 1u
+
+extern ID ir_event_flag_id;
+extern ID ir_snapshot_lock_id;
+
+void ir_bench_task(INT start_code, void *task_context);
+ER ir_get_snapshot(uint8_t gpio, IR_Snapshot *snapshot_out);
 
 #endif /* SUBSYSTEM3_H */
