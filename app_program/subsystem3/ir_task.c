@@ -1,8 +1,7 @@
-#include "subsystem3.h"
+#include "ir_internal.h"
 #include <sys/machine.h>
 #include <config_tm.h>
 
-#define S3_PRI_MAIN 16
 #define IR_CHANGED 1u
 
 #if !TM_CONSOLE_UART
@@ -18,8 +17,6 @@ static const ir_sensor_config_t sensors[] = {
     { .gpio = 0,  .black_is_high = false }  /* right */
 };
 
-static ID ir_event;
-static ID ir_mutex;
 static ir_snapshot_t latest;
 
 static UW edge_mask(UINT gpio)
@@ -45,7 +42,7 @@ static void gpio_bank_handler(UINT intno)
     }
 }
 
-static void ir_task(INT stacd, void *exinf)
+void ir_task(INT stacd, void *exinf)
 {
     (void)stacd;
     (void)exinf;
@@ -110,40 +107,6 @@ static void ir_task(INT stacd, void *exinf)
     }
 }
 #endif
-
-ER ir_init(void)
-{
-#if !TM_CONSOLE_UART
-    const T_CFLG flag = {0};
-    const T_CMTX mutex = { .mtxatr = TA_INHERIT };
-
-    ir_mutex = tk_cre_mtx(&mutex);
-    if (ir_mutex < E_OK) {
-        return ir_mutex;
-    }
-    ir_event = tk_cre_flg(&flag);
-    if (ir_event < E_OK) {
-        (void)tk_del_mtx(ir_mutex);
-        ir_mutex = 0;
-        return ir_event;
-    }
-#endif
-    return E_OK;
-}
-
-ER ir_start(void)
-{
-#if TM_CONSOLE_UART
-    tm_printf((const UB *)"[IR] disabled: right sensor GP0 is used by UART0\n");
-    return E_OK;
-#else
-    if (ir_event <= 0) {
-        return E_OBJ;
-    }
-    ID tid = app_start_task(ir_task, S3_PRI_MAIN, TP_PRC1, "ir");
-    return tid < E_OK ? tid : E_OK;
-#endif
-}
 
 ER ir_get_snapshot(ir_snapshot_t *out)
 {
