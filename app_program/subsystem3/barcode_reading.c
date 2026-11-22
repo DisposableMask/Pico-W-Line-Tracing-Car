@@ -7,7 +7,7 @@ typedef struct {
   bool level_high;
 } BarcodeEdge;
 
-#define BARCODE_EDGE_QUEUE_SIZE 16u
+#define BARCODE_EDGE_QUEUE_SIZE 32u
 #define BARCODE_EDGE_LOST 1u
 
 // Set to false if your bench test showed that black reads 0.
@@ -70,10 +70,12 @@ void barcode_pin_changed(uint32_t gpio, uint32_t edges)
 
 static bool classify_widths(const uint32_t widths_us[9], char pattern[10])
 {
+  bool widths_valid = true;
+
   for (unsigned int i = 0; i < 9u; ++i) {
-    // A zero-duration element is invalid.
+    // Mark zero widths invalid and keep building the diagnostic pattern.
     if (widths_us[i] == 0u) {
-      return false;
+      widths_valid = false;
     }
     pattern[i] = '0';
   }
@@ -106,11 +108,11 @@ static bool classify_widths(const uint32_t widths_us[9], char pattern[10])
     // Require the smallest wide element to be at least 1.4 times the
     // average of the three narrow elements of this colour.
     if (15u * (uint64_t)smallest_wide < 7u * narrow_sum) {
-      return false;
+      widths_valid = false;
     }
   }
 
-  return true;
+  return widths_valid;
 }
 
 void barcode_reading_task(INT start_code, void *task_context)
@@ -163,20 +165,22 @@ void barcode_reading_task(INT start_code, void *task_context)
       // Print only after all nine widths are captured.
       if (width_count == 9u) {
         for (unsigned int i = 0; i < width_count; ++i) {
-          tm_printf((const UB *)"[Barcode] width[%u] %s=%u us\n",
+          tm_printf((const UB *)"[Barcode] width[%u] %s=%u\n",
                     (UINT)i, (i % 2u == 0u) ? "black" : "white",
                     (UINT)widths_us[i]);
         }
 
         char pattern[10];
 
-        // Print the pattern only when both colours have clear width separation.
-        if (classify_widths(widths_us, pattern)) {
-          tm_printf((const UB *)"[Barcode] pattern=%s\n", pattern);
-        } else {
-          tm_printf((const UB *)"[Barcode] Widths too close or invalid.\n");
-        }
         
+
+        const bool widths_valid = classify_widths(widths_us, pattern);
+
+        // Print the pattern after the nine width lines, even if rejected.
+        tm_printf((const UB *)"[Barcode] %s pattern=%s\n",
+                  widths_valid ? "widths accepted" : "tentative (widths rejected)",
+                  pattern);
+
         capturing = false;
       }
     }
