@@ -6,6 +6,7 @@
  */
 
 #include "subsystem3.h"
+#include "../gpio_irq.h"
 
 Installed_IR installed_ir_sensors = {
   .front_left  = { .gpio = 27u, .is_digital = true },
@@ -53,18 +54,58 @@ EXPORT ER subsystem3_init(void)
   return E_OK;
 }
 
+static void ir_pin_changed(uint32_t gpio, uint32_t edges)
+{
+  (void)gpio;
+  (void)edges;
+  (void)tk_set_flg(ir_event_flag_id, IR_SAMPLE_REQUESTED);
+}
+
+static void ir_worker_on_core0(INT start_code, void *task_context)
+{
+  const uint32_t both_edges = HAL_GPIO_EDGE_RISE | HAL_GPIO_EDGE_FALL;
+  ER err = gpio_irq_init();
+
+  // Register the front pins after the shared handler is installed.
+  if (err == E_OK) {
+    err = gpio_irq_register(
+      installed_ir_sensors.front_left.gpio,
+      both_edges,
+      ir_pin_changed
+    );
+  }
+  if (err == E_OK) {
+    err = gpio_irq_register(
+      installed_ir_sensors.front_right.gpio,
+      both_edges,
+      ir_pin_changed
+    );
+  }
+
+  // Request the initial sample even if neither pin changes at boot.
+  if (err == E_OK) {
+    err = tk_set_flg(ir_event_flag_id, IR_SAMPLE_REQUESTED);
+  }
+
+  // Stop this worker if interrupt setup failed.
+  if (err != E_OK) {
+    tm_printf((const UB *)"[IR] Interrupt setup failed: %d\n", (INT)err);
+    tk_ext_tsk();
+    return;
+  }
+
+  ir_bench_task(start_code, task_context);
+}
+
 EXPORT ER subsystem3_start(void)
 {
+  // Start only after subsystem3_init() creates the event flag
   if (ir_event_flag_id <= 0) {
 
     return E_OBJ;
   }
 
-  ID worker_task_id = app_start_task(ir_bench_task, S3_PRI_MAIN, 0, "ir_bench");
-  if (worker_task_id < E_OK) {
+  ID worker_task_id = app_start_task(ir_worker_on_core0, S3_PRI_MAIN, TP_PRC1, "ir_bench");
 
-    return worker_task_id;
-  }
-
-  return tk_set_flg(ir_event_flag_id, IR_SAMPLE_REQUESTED);
+  return worker_task_id < E_OK ? worker_task_id : E_OK;
 }
