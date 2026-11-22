@@ -115,7 +115,7 @@ static bool classify_widths(const uint32_t widths_us[9], char pattern[10])
   return widths_valid;
 }
 
-static char decode_character(const char pattern[10])
+static char decode_character(const char pattern[10], bool reverse_order)
 {
   static const uint16_t letter_patterns[] = {
     0x109u, 0x049u, 0x148u, 0x019u, 0x118u, 0x058u, 0x00du,
@@ -126,7 +126,8 @@ static char decode_character(const char pattern[10])
 
   uint16_t bits = 0;
   for (unsigned int i = 0; i < 9u; ++i) {
-    bits = (uint16_t)((bits << 1u) | (pattern[i] == '1'));
+    const unsigned int index = reverse_order ? 8u - i : i;
+    bits = (uint16_t)((bits << 1u) | (pattern[index] == '1'));
   }
 
   // The opening and closing markers use the same pattern.
@@ -143,15 +144,26 @@ static char decode_character(const char pattern[10])
   return '\0';
 }
 
-static char decode_and_print_character(const uint32_t widths_us[9], bool looking_for_start)
+static char decode_and_print_character(const uint32_t widths_us[9], bool looking_for_start, bool *reverse_scan)
 {
   char pattern[10];
   const bool widths_valid = classify_widths(widths_us, pattern);
-  const char character = widths_valid ? decode_character(pattern) : '\0';
+  char character = '\0';
 
-  // While searching, print only a valid opening marker.
-  if (looking_for_start && character != '*') {
-    return '\0';
+  if (looking_for_start) {
+    // Try both orders for the opening marker and remember which one matched.
+    if (!widths_valid) {
+      return '\0';
+    }
+    const bool opening_is_reversed = decode_character(pattern, false) != '*';
+    character = decode_character(pattern, opening_is_reversed);
+    if (character != '*') {
+      return '\0';
+    }
+    *reverse_scan = opening_is_reversed;
+  } else if (widths_valid) {
+    // Read the payload and closing marker in the opening marker's direction.
+    character = decode_character(pattern, *reverse_scan);
   }
 
   for (unsigned int i = 0; i < 9u; ++i) {
@@ -180,6 +192,7 @@ void barcode_reading_task(INT start_code, void *task_context)
   unsigned int width_count = 0;
   bool capturing = false;
   bool looking_for_start = true;
+  bool reverse_scan = false;
 
   for (;;) {
     UINT received_edges;
@@ -220,7 +233,7 @@ void barcode_reading_task(INT start_code, void *task_context)
       // Decode one character as soon as its nine widths are ready.
       if (width_count == 9u) {
         const char character =
-            decode_and_print_character(widths_us, looking_for_start);
+            decode_and_print_character(widths_us, looking_for_start, &reverse_scan);
 
         // Keep seven widths and try the next black bar as a start candidate.
         if (looking_for_start && character != '*') {
