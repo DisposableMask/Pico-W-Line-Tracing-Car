@@ -14,8 +14,26 @@ static void ir_bench_task(INT stacd, void *exinf)
     .sensor = installed_ir_sensors.front_right
   };
 
-  for (uint32_t current_tick = 0;;current_tick++) {
+  const UW initial_levels = in_w(GPIO_IN);
+  const uint32_t start_time = in_w(TIMER_TIMERAWL);
+
+  // bitmask gpio pins to get ir sensor gpio pin, read value
+  fl_last_state.sensor.reading = (uint16_t)(initial_levels >> fl_last_state.sensor.gpio) & 1u;
+  fr_last_state.sensor.reading = (uint16_t)(initial_levels >> fr_last_state.sensor.gpio) & 1u;
+
+  fl_last_state.timestamp = start_time;
+  fr_last_state.timestamp = start_time;
+
+  // print it to serial monitor
+  tm_printf(
+    (const UB *)"initial left=%u right=%u\n",
+    (UINT)fl_last_state.timestamp,
+    (UINT)fr_last_state.timestamp
+  );
+
+  for (;;) {
     UW levels = in_w(GPIO_IN);
+    uint32_t sampled_timestamp = in_w(TIMER_TIMERAWL);
 
     IR front_left = installed_ir_sensors.front_left;
     IR front_right = installed_ir_sensors.front_right;
@@ -29,7 +47,7 @@ static void ir_bench_task(INT stacd, void *exinf)
       front_left.reading != fl_last_state.sensor.reading
     ) {
       fl_last_state.sensor.reading = front_left.reading;
-      fl_last_state.timestamp = current_tick;
+      fl_last_state.timestamp = sampled_timestamp;
 
       // print it to serial monitor
       tm_printf(
@@ -45,7 +63,7 @@ static void ir_bench_task(INT stacd, void *exinf)
       front_right.reading != fr_last_state.sensor.reading
     ) {
       fr_last_state.sensor.reading = front_right.reading;
-      fr_last_state.timestamp = current_tick;
+      fr_last_state.timestamp = sampled_timestamp;
       // print it to serial monitor
       tm_printf(
         (const UB *)"left=%u right=%u\nright_timestamp=%u\n",
