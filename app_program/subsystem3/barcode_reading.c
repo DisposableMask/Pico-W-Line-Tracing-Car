@@ -10,6 +10,9 @@ typedef struct {
 #define BARCODE_EDGE_QUEUE_SIZE 16u
 #define BARCODE_EDGE_LOST 1u
 
+// Set to false if your bench test showed that black reads 0.
+#define BARCODE_BLACK_IS_HIGH true
+
 static BarcodeEdge edge_queue[BARCODE_EDGE_QUEUE_SIZE];
 static uint8_t read_index;
 static uint8_t write_index;
@@ -71,6 +74,8 @@ void barcode_reading_task(INT start_code, void *task_context)
   (void)task_context;
 
   const UINT wake_flags = HAL_GPIO_EDGE_RISE | HAL_GPIO_EDGE_FALL | BARCODE_EDGE_LOST;
+  uint32_t black_started_at = 0;
+  bool measuring_black = false;
 
   for (;;) {
     UINT received_edges;
@@ -85,12 +90,22 @@ void barcode_reading_task(INT start_code, void *task_context)
     BarcodeEdge edge;
     bool edge_lost;
     while (take_barcode_edge(&edge, &edge_lost)) {
-      tm_printf((const UB *)"[Barcode] level=%u timestamp=%u\n",
-                (UINT)edge.level_high, (UINT)edge.timestamp);
+      const bool is_black = edge.level_high == BARCODE_BLACK_IS_HIGH;
+
+      // Entering black starts the measurement. Returning to white ends it.
+      if (is_black) {
+        black_started_at = edge.timestamp;
+        measuring_black = true;
+      } else if (measuring_black) {
+        const uint32_t width_us = edge.timestamp - black_started_at;
+        measuring_black = false;
+        tm_printf((const UB *)"[Barcode] black_width_us=%u\n", (UINT)width_us);
+      }
     }
 
-    // Report the reset in task context, after interrupts are restored.
+    // Drop an unfinished bar so the next white edge can't finish it.
     if (edge_lost) {
+      measuring_black = false;
       tm_printf((const UB *)"[Barcode] Edge lost. Capture discarded.\n");
     }
   }
