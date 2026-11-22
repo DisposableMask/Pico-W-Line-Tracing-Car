@@ -94,12 +94,6 @@ void barcode_reading_task(INT start_code, void *task_context)
     bool edge_lost;
     while (take_barcode_edge(&edge, &edge_lost)) {
       const bool is_black = edge.level_high == BARCODE_BLACK_IS_HIGH;
-
-      // Entering black starts the measurement. Returning to white ends it.
-      if (is_black) {
-        black_started_at = edge.timestamp;
-        measuring_black = true;
-      } else if (measuring_black) {
         
       // Start the character on an edge into black.
       if (!capturing) {
