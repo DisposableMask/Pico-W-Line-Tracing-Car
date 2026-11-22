@@ -7,7 +7,6 @@
 
 #include "subsystem3.h"
 
-ER ir_bench_start(void);
 
 EXPORT ER subsystem3_init(void)
 {
