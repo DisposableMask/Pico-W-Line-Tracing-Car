@@ -68,6 +68,51 @@ void barcode_pin_changed(uint32_t gpio, uint32_t edges)
   (void)tk_set_flg(barcode_edge_flag_id, edges);
 }
 
+static bool classify_widths(const uint32_t widths_us[9], char pattern[10])
+{
+  for (unsigned int i = 0; i < 9u; ++i) {
+    // A zero-duration element is invalid.
+    if (widths_us[i] == 0u) {
+      return false;
+    }
+    pattern[i] = '0';
+  }
+  pattern[9] = '\0';
+
+  for (unsigned int colour = 0; colour < 2u; ++colour) {
+    const unsigned int wide_count = colour == 0u ? 2u : 1u;
+    uint32_t smallest_wide = 0;
+
+    // Mark the widest elements of this colour in their original positions.
+    for (unsigned int pick = 0; pick < wide_count; ++pick) {
+      unsigned int widest = 9u;
+      for (unsigned int i = colour; i < 9u; i += 2u) {
+        if (pattern[i] == '0' &&
+            (widest == 9u || widths_us[i] > widths_us[widest])) {
+          widest = i;
+        }
+      }
+      pattern[widest] = '1';
+      smallest_wide = widths_us[widest];
+    }
+
+    uint64_t narrow_sum = 0;
+    for (unsigned int i = colour; i < 9u; i += 2u) {
+      if (pattern[i] == '0') {
+        narrow_sum += widths_us[i];
+      }
+    }
+
+    // Require the smallest wide element to be at least 1.4 times the
+    // average of the three narrow elements of this colour.
+    if (15u * (uint64_t)smallest_wide < 7u * narrow_sum) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 void barcode_reading_task(INT start_code, void *task_context)
 {
   (void)start_code;
@@ -122,6 +167,16 @@ void barcode_reading_task(INT start_code, void *task_context)
                     (UINT)i, (i % 2u == 0u) ? "black" : "white",
                     (UINT)widths_us[i]);
         }
+
+        char pattern[10];
+
+        // Print the pattern only when both colours have clear width separation.
+        if (classify_widths(widths_us, pattern)) {
+          tm_printf((const UB *)"[Barcode] pattern=%s\n", pattern);
+        } else {
+          tm_printf((const UB *)"[Barcode] Widths too close or invalid.\n");
+        }
+        
         capturing = false;
       }
     }
