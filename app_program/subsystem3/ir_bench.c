@@ -46,15 +46,16 @@ static void ir_bench_task(INT stacd, void *exinf)
       is_ir_equal(front_left, fl_last_state.sensor) &&
       front_left.reading != fl_last_state.sensor.reading
     ) {
+      const uint32_t elapsed_time = sampled_timestamp - fl_last_state.timestamp;
       fl_last_state.sensor.reading = front_left.reading;
       fl_last_state.timestamp = sampled_timestamp;
 
       // print it to serial monitor
       tm_printf(
-        (const UB *)"left=%u right=%u\nleft_timestamp=%u\n",
+        (const UB *)"left=%u right=%u\nleft_elapsed=%u\n",
         (UINT)front_left.reading,
         (UINT)front_right.reading,
-        (UINT)fl_last_state.timestamp
+        (UINT)elapsed_time
       );
     }
 
@@ -62,14 +63,15 @@ static void ir_bench_task(INT stacd, void *exinf)
       is_ir_equal(front_right, fr_last_state.sensor) &&
       front_right.reading != fr_last_state.sensor.reading
     ) {
+      const uint32_t elapsed_time = sampled_timestamp - fr_last_state.timestamp;
       fr_last_state.sensor.reading = front_right.reading;
       fr_last_state.timestamp = sampled_timestamp;
       // print it to serial monitor
       tm_printf(
-        (const UB *)"left=%u right=%u\nright_timestamp=%u\n",
+        (const UB *)"left=%u right=%u\nright_elapsed=%u\n",
         (UINT)front_left.reading,
         (UINT)front_right.reading,
-        (UINT)fr_last_state.timestamp
+        (UINT)elapsed_time
       );
     }
 
