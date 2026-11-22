@@ -9,6 +9,8 @@
 #ifndef SUBSYSTEM3_H
 #define SUBSYSTEM3_H
 
+#include <stdint.h>
+#include <stdbool.h>
 #include "../app.h"
 
 #define S3_PRI_MAIN 16
@@ -24,6 +26,8 @@ typedef struct installed_ir_t {
   IR front_right;
   IR barcode;
 } Installed_IR;
+
+extern Installed_IR ir_sensors;
 
 /* Add IR reading type and getter here once interface is ready */
 ER ir_bench_start(void);
