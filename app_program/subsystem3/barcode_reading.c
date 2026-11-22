@@ -7,8 +7,27 @@ typedef struct {
   bool level_high;
 } BarcodeEdge;
 
-static BarcodeEdge latest_edge;
-static bool edge_available;
+#define BARCODE_EDGE_QUEUE_SIZE 16u
+
+static BarcodeEdge edge_queue[BARCODE_EDGE_QUEUE_SIZE];
+static uint8_t read_index;
+static uint8_t write_index;
+
+static bool take_barcode_edge(BarcodeEdge *edge_out)
+{
+  UINT interrupt_state;
+  DI(interrupt_state);
+
+  // Copy one record before letting the interrupt handler run again.
+  const bool edge_available = read_index != write_index;
+  if (edge_available) {
+    *edge_out = edge_queue[read_index];
+    read_index = (read_index + 1u) % BARCODE_EDGE_QUEUE_SIZE;
+  }
+
+  EI(interrupt_state);
+  return edge_available;
+}
 
 void barcode_pin_changed(uint32_t gpio, uint32_t edges)
 {
@@ -20,12 +39,18 @@ void barcode_pin_changed(uint32_t gpio, uint32_t edges)
     return;
   }
 
-  latest_edge = (BarcodeEdge) {
+  const uint8_t next_write_index = (write_index + 1u) % BARCODE_EDGE_QUEUE_SIZE;
+
+  // Leave one slot unused so equal indices mean the queue is empty.
+  if (next_write_index == read_index) {
+    return;
+  }
+
+  edge_queue[write_index] = (BarcodeEdge) {
     .timestamp = timestamp,
     .level_high = edges == HAL_GPIO_EDGE_RISE,
   };
-
-  edge_available = true;
+  write_index = next_write_index;
   (void)tk_set_flg(barcode_edge_flag_id, edges);
 }
 
@@ -45,16 +70,9 @@ void barcode_reading_task(INT start_code, void *task_context)
       continue;
     }
 
-    // Both the callback and this task run on core 0. Pause interrupts for the copy.
-    UINT interrupt_state;
-    DI(interrupt_state);
-    const BarcodeEdge edge = latest_edge;
-    const bool captured = edge_available;
-    edge_available = false;
-    EI(interrupt_state);
-
-    // Print in task context after interrupts are restored.
-    if (captured) {
+    // One wake-up can cover several edges. Drain them in arrival order.
+    BarcodeEdge edge;
+    while (take_barcode_edge(&edge)) {
       tm_printf((const UB *)"[Barcode] level=%u timestamp=%u\n",
                 (UINT)edge.level_high, (UINT)edge.timestamp);
     }
