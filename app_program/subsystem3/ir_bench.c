@@ -1,15 +1,7 @@
-#include "subsystem3.h"
+#include "ir_internal.h"
 #include <config_tm.h>
 #include <sys/machine.h>
 
-#define S3_PRI_MAIN 16
-
-#if !TM_CONSOLE_UART
-/* Confirm polarity with the installed sensors and tape. */
-static const ir_sensor_config_t left = { 27, false };
-static const ir_sensor_config_t right = { 0, false };
-static bool gpio_ready;
-#endif
 
 ER ir_get_snapshot(ir_snapshot_t *out)
 {
@@ -20,8 +12,8 @@ ER ir_get_snapshot(ir_snapshot_t *out)
 #if !TM_CONSOLE_UART
     if (gpio_ready) {
         UW levels = in_w(GPIO_IN);
-        out->left_on_black = ((levels & (1u << left.gpio)) != 0u) == left.black_is_high;
-        out->right_on_black = ((levels & (1u << right.gpio)) != 0u) == right.black_is_high;
+        out->left_on_black = ((levels & (1u << ir_left.gpio)) != 0u) == ir_left.black_is_high;
+        out->right_on_black = ((levels & (1u << ir_right.gpio)) != 0u) == ir_right.black_is_high;
         out->valid = true;
     }
 #endif
@@ -29,7 +21,7 @@ ER ir_get_snapshot(ir_snapshot_t *out)
 }
 
 #if !TM_CONSOLE_UART
-static void ir_bench_task(INT stacd, void *exinf)
+void ir_bench_task(INT stacd, void *exinf)
 {
     (void)stacd;
     (void)exinf;
@@ -44,30 +36,3 @@ static void ir_bench_task(INT stacd, void *exinf)
     }
 }
 #endif
-
-ER ir_init(void)
-{
-#if !TM_CONSOLE_UART
-    ER err = gpio_set_pin(left.gpio, GPIO_MODE_IN);
-    if (err == E_OK) {
-        err = gpio_set_pin(right.gpio, GPIO_MODE_IN);
-    }
-    gpio_ready = err == E_OK;
-    return err;
-#else
-    return E_OK;
-#endif
-}
-
-ER ir_start(void)
-{
-#if !TM_CONSOLE_UART
-    if (!gpio_ready) {
-        return E_OBJ;
-    }
-    ID tid = app_start_task(ir_bench_task, S3_PRI_MAIN, 0, "ir_bench");
-    return tid < E_OK ? tid : E_OK;
-#else
-    return E_OK;
-#endif
-}
