@@ -13,6 +13,9 @@ Installed_IR installed_ir_sensors = {
   .barcode     = { .gpio = 30u, .is_digital = true }
 };
 
+ID ir_event_flag_id;
+ID ir_snapshot_lock_id;
+
 EXPORT ER subsystem3_init(void)
 {
   /* Set up IR driver and shared reading here */
@@ -25,13 +28,43 @@ EXPORT ER subsystem3_init(void)
   }
 
   // Initialise pin, return status
-  return gpio_set_pin(installed_ir_sensors.front_right.gpio, GPIO_MODE_IN);
+  err = gpio_set_pin(installed_ir_sensors.front_right.gpio, GPIO_MODE_IN);
+  if (err != E_OK) {
+    return err;
+  }
+
+  // Create the lock that protects each saved reading and timestamp
+  const T_CMTX lock_settings = { .mtxatr = TA_INHERIT };
+  ir_snapshot_lock_id = tk_cre_mtx(&lock_settings);
+  if (ir_snapshot_lock_id < E_OK) {
+    return ir_snapshot_lock_id;
+  }
+
+  // Create the worker's wake-up flag and release the lock if setup fails
+  const T_CFLG event_settings = { 0 };
+  ir_event_flag_id = tk_cre_flg(&event_settings);
+
+  if (ir_event_flag_id < E_OK) {
+    (void)tk_del_mtx(ir_snapshot_lock_id);
+    ir_snapshot_lock_id = 0;
+
+    return ir_event_flag_id;
+  }
+  return E_OK;
 }
 
 EXPORT ER subsystem3_start(void)
 {
-  // Temporary Success Log
-  tm_printf((const UB *)"c::subsystem3_start()");
+  if (ir_event_flag_id <= 0) {
 
-  return ir_bench_start();
+    return E_OBJ;
+  }
+
+  ID worker_task_id = app_start_task(ir_bench_task, S3_PRI_MAIN, 0, "ir_bench");
+  if (worker_task_id < E_OK) {
+
+    return worker_task_id;
+  }
+
+  return tk_set_flg(ir_event_flag_id, IR_SAMPLE_REQUESTED);
 }

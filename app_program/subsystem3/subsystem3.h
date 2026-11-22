@@ -30,17 +30,19 @@ typedef struct installed_ir_t {
 extern Installed_IR installed_ir_sensors;
 
 typedef struct ir_snapshot_t {
-  IR sensor;
+  uint16_t reading;
   uint32_t timestamp;
 } IR_Snapshot;
 
-// Helper to compare struct sensors
-static inline bool is_ir_equal(const IR A, const IR B) {
-  return (A.gpio == B.gpio) && (A.is_digital == B.is_digital);
-}
-
 
 /* Add IR reading type and getter here once interface is ready */
-ER ir_bench_start(void);
+
+#define IR_SAMPLE_REQUESTED 1u
+
+extern ID ir_event_flag_id;
+extern ID ir_snapshot_lock_id;
+
+void ir_bench_task(INT start_code, void *task_context);
+ER ir_get_snapshot(uint8_t gpio, IR_Snapshot *snapshot_out);
 
 #endif /* SUBSYSTEM3_H */
