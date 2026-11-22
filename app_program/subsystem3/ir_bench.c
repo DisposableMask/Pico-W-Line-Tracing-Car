@@ -45,7 +45,7 @@ static void ir_bench_task(INT stacd, void *exinf)
 }
 #endif
 
-EXPORT ER subsystem3_init(void)
+ER ir_init(void)
 {
 #if !TM_CONSOLE_UART
     ER err = gpio_set_pin(left.gpio, GPIO_MODE_IN);
@@ -59,7 +59,7 @@ EXPORT ER subsystem3_init(void)
 #endif
 }
 
-EXPORT ER subsystem3_start(void)
+ER ir_start(void)
 {
 #if !TM_CONSOLE_UART
     if (!gpio_ready) {
