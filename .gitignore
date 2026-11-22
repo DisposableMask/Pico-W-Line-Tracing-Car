@@ -30,4 +30,5 @@ config/wifi_secrets.h
 .vscode/*
 
 # FOTA Related
-send_update.bat
+*.bat
+tools/pico_fota/picotool

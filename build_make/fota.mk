@@ -33,7 +33,7 @@ $(FOTA_OBJS):
 FOTA_BOOT_UF2 := ../tools/pico_fota/pico_fota_bootloader.uf2
 FOTA_UF2_PAD := ../tools/pico_fota/pad_rp2040_uf2.py
 FOTA_SHA256 := ../tools/pico_fota/sha256_append.py
-PICOTOOL ?= picotool
+PICOTOOL ?= $(or $(wildcard ../tools/pico_fota/picotool),picotool)
 
 all: $(EXE_FILE)_image.bin
 
