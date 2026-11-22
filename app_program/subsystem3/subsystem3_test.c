@@ -6,6 +6,7 @@
  */
 
 #include "subsystem3.h"
+#include "../robot_hal.h"
 #include "../test_report.h"
 
 #if APP_TEST
@@ -21,13 +22,14 @@ EXPORT void subsystem3_test(void)
 	/* Replace with real checks of this subsystem's behaviour */
 	TEST_CHECK("S3-U01", tk_get_tid() > 0, "S3: subsystem3_test()");
 
-  tk_dly_tsk(5000);
-  tm_printf((const UB *)"[IR test] Move tape under one sensor now.\n");
-  tk_dly_tsk(5000);
+  tm_printf((const UB *)"[Barcode test] Move tape onto and off the barcode sensor.\n");
 
-  // Ask the worker to read both pins again after the tape moves.
-  TEST_CHECK("S3-U02", sample_request_result == E_OK,
-              "IR sample request sent");
+  // Wait until the callback has reported one rising and one falling edge.
+  UINT received_edges;
+  const UINT both_edges = HAL_GPIO_EDGE_RISE | HAL_GPIO_EDGE_FALL;
+  const ER edge_result = tk_wai_flg(barcode_edge_flag_id, both_edges,
+                                    TWF_ANDW | TWF_BITCLR, &received_edges, 10000);
+  TEST_CHECK("S3-U02", edge_result == E_OK, "Barcode GPIO reported both edges");
 
 	TEST_SUMMARY("subsystem3");
 }

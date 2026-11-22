@@ -15,6 +15,7 @@ Installed_IR installed_ir_sensors = {
 };
 
 ID ir_event_flag_id;
+ID barcode_edge_flag_id;
 ID ir_snapshot_lock_id;
 
 EXPORT ER subsystem3_init(void)
@@ -40,10 +41,6 @@ EXPORT ER subsystem3_init(void)
     return err;
   }
 
-  // Temporary boot log to check barcode polarity.
-  tm_printf((const UB *)"barcode=%u\n",
-            gpio_get_val(installed_ir_sensors.barcode.gpio));
-
   // Create the lock that protects each saved reading and timestamp
   const T_CMTX lock_settings = { .mtxatr = TA_INHERIT };
   ir_snapshot_lock_id = tk_cre_mtx(&lock_settings);
@@ -61,6 +58,19 @@ EXPORT ER subsystem3_init(void)
 
     return ir_event_flag_id;
   }
+
+  // Give barcode edges their own flag so they don't wake the front IR worker.
+  barcode_edge_flag_id = tk_cre_flg(&event_settings);
+  if (barcode_edge_flag_id < E_OK) {
+    (void)tk_del_flg(ir_event_flag_id);
+    (void)tk_del_mtx(ir_snapshot_lock_id);
+
+    ir_event_flag_id = 0;
+    ir_snapshot_lock_id = 0;
+
+    return barcode_edge_flag_id;
+  }
+
   return E_OK;
 }
 
@@ -69,6 +79,12 @@ static void ir_pin_changed(uint32_t gpio, uint32_t edges)
   (void)gpio;
   (void)edges;
   (void)tk_set_flg(ir_event_flag_id, IR_SAMPLE_REQUESTED);
+}
+
+static void barcode_pin_changed(uint32_t gpio, uint32_t edges)
+{
+  (void)gpio;
+  (void)tk_set_flg(barcode_edge_flag_id, edges);
 }
 
 static void ir_worker_on_core0(INT start_code, void *task_context)
@@ -90,6 +106,11 @@ static void ir_worker_on_core0(INT start_code, void *task_context)
       both_edges,
       ir_pin_changed
     );
+  }
+
+  // Route both barcode pin edges to the barcode callback.
+  if (err == E_OK) {
+    err = gpio_irq_register(installed_ir_sensors.barcode.gpio, both_edges, barcode_pin_changed);
   }
 
   // Request the initial sample even if neither pin changes at boot.

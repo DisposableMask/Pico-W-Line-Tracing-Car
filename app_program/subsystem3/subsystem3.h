@@ -40,6 +40,7 @@ typedef struct ir_snapshot_t {
 #define IR_SAMPLE_REQUESTED 1u
 
 extern ID ir_event_flag_id;
+extern ID barcode_edge_flag_id;
 extern ID ir_snapshot_lock_id;
 
 void ir_bench_task(INT start_code, void *task_context);
