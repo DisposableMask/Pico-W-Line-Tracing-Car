@@ -115,6 +115,59 @@ static bool classify_widths(const uint32_t widths_us[9], char pattern[10])
   return widths_valid;
 }
 
+static char decode_character(const char pattern[10])
+{
+  static const uint16_t letter_patterns[] = {
+    0x109u, 0x049u, 0x148u, 0x019u, 0x118u, 0x058u, 0x00du,
+    0x10cu, 0x04cu, 0x01cu, 0x103u, 0x043u, 0x142u, 0x013u,
+    0x112u, 0x052u, 0x007u, 0x106u, 0x046u, 0x016u, 0x181u,
+    0x0c1u, 0x1c0u, 0x091u, 0x190u, 0x0d0u,
+  };
+
+  uint16_t bits = 0;
+  for (unsigned int i = 0; i < 9u; ++i) {
+    bits = (uint16_t)((bits << 1u) | (pattern[i] == '1'));
+  }
+
+  // The opening and closing markers use the same pattern.
+  if (bits == 0x094u) {
+    return '*';
+  }
+
+  for (unsigned int i = 0; i < sizeof(letter_patterns) / sizeof(letter_patterns[0]); ++i) {
+    if (bits == letter_patterns[i]) {
+      return (char)('A' + i);
+    }
+  }
+
+  return '\0';
+}
+
+static char decode_and_print_character(const uint32_t widths_us[9], bool looking_for_start)
+{
+  char pattern[10];
+  const bool widths_valid = classify_widths(widths_us, pattern);
+  const char character = widths_valid ? decode_character(pattern) : '\0';
+
+  // While searching, print only a valid opening marker.
+  if (looking_for_start && character != '*') {
+    return '\0';
+  }
+
+  for (unsigned int i = 0; i < 9u; ++i) {
+    tm_printf((const UB *)"[Barcode] width[%u] %s=%u us\n",
+              (UINT)i, (i % 2u == 0u) ? "black" : "white",
+              (UINT)widths_us[i]);
+  }
+  tm_printf((const UB *)"[Barcode] pattern=%s widths_valid=%u\n",
+            pattern, (UINT)widths_valid);
+  // Report the character immediately after its nine widths.
+  if (character != '\0') {
+    tm_printf((const UB *)"[Barcode] character=%c\n", character);
+  }
+  return character;
+}
+
 void barcode_reading_task(INT start_code, void *task_context)
 {
   (void)start_code;
@@ -126,6 +179,7 @@ void barcode_reading_task(INT start_code, void *task_context)
   uint32_t previous_edge_at = 0;
   unsigned int width_count = 0;
   bool capturing = false;
+  bool looking_for_start = true;
 
   for (;;) {
     UINT received_edges;
@@ -156,30 +210,33 @@ void barcode_reading_task(INT start_code, void *task_context)
       const bool expected_black = (width_count % 2u) != 0u;
       if (is_black != expected_black) {
         capturing = false;
+        looking_for_start = true;
         continue;
       }
 
       widths_us[width_count++] = edge.timestamp - previous_edge_at;
       previous_edge_at = edge.timestamp;
 
-      // Print only after all nine widths are captured.
+      // Decode one character as soon as its nine widths are ready.
       if (width_count == 9u) {
-        for (unsigned int i = 0; i < width_count; ++i) {
-          tm_printf((const UB *)"[Barcode] width[%u] %s=%u\n",
-                    (UINT)i, (i % 2u == 0u) ? "black" : "white",
-                    (UINT)widths_us[i]);
+        const char character =
+            decode_and_print_character(widths_us, looking_for_start);
+
+        // Keep seven widths and try the next black bar as a start candidate.
+        if (looking_for_start && character != '*') {
+          for (unsigned int i = 0; i < 7u; ++i) {
+            widths_us[i] = widths_us[i + 2u];
+          }
+          width_count = 7u;
+          continue;
         }
 
-        char pattern[10];
-
-        
-
-        const bool widths_valid = classify_widths(widths_us, pattern);
-
-        // Print the pattern after the nine width lines, even if rejected.
-        tm_printf((const UB *)"[Barcode] %s pattern=%s\n",
-                  widths_valid ? "widths accepted" : "tentative (widths rejected)",
-                  pattern);
+        // The first '*' opens the scan. A closing '*' or bad character resets it.
+        if (character == '*') {
+          looking_for_start = !looking_for_start;
+        } else if (character == '\0') {
+          looking_for_start = true;
+        }
 
         capturing = false;
       }
@@ -188,6 +245,7 @@ void barcode_reading_task(INT start_code, void *task_context)
     // Discard the partial character if any edge was lost.
     if (edge_lost) {
       capturing = false;
+      looking_for_start = true;
       width_count = 0;
       tm_printf((const UB *)"[Barcode] Edge lost. Capture discarded.\n");
     }
