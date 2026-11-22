@@ -20,10 +20,12 @@
 
 EXPORT ER subsystem5_init(void)
 {
+  tm_printf((const UB *)"c::subsystem5_init()");
 	return E_OK;
 }
 
 EXPORT ER subsystem5_start(void)
 {
+  tm_printf((const UB *)"c::subsystem5_start()");
 	return E_OK;
 }
