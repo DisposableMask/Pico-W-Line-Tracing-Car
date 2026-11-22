@@ -1,19 +1,30 @@
-/*
- *	subsystem3.h
- *	Subsystem 3 -- Consumer (statistics).  Student ID: <student ID>.
- *
- *	Public interface of subsystem 3.  Other subsystems include it as
- *	"../subsystem3/subsystem3.h".
- */
-
 #ifndef SUBSYSTEM3_H
 #define SUBSYSTEM3_H
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "../app.h"
 
-#define S3_PRI_MAIN 16
+typedef struct {
+    uint8_t gpio;
+    bool black_is_high;
+} ir_sensor_config_t;
 
-/* Add IR reading type and getter here once interface is ready */
-ER ir_bench_start(void);
+typedef struct {
+    bool left_on_black;
+    bool right_on_black;
+    bool valid;
+    uint32_t last_change_ms;
+} ir_snapshot_t;
 
-#endif /* SUBSYSTEM3_H */
+typedef enum {
+    IR_STEER_STOP,
+    IR_STEER_STRAIGHT,
+    IR_STEER_LEFT,
+    IR_STEER_RIGHT
+} ir_steering_t;
+
+ER ir_get_snapshot(ir_snapshot_t *out);
+ir_steering_t ir_steering_decision(const ir_snapshot_t *snapshot);
+
+#endif

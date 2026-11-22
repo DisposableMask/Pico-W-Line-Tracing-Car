@@ -48,7 +48,7 @@ fixed.
 | Pin | Owner | Used for |
 |---|---|---|
 | GP23, GP24, GP25, GP29 | *reserved* | Pico W radio |
-| GP0 | | (taken whenever the team builds with `CRASH_REPORT=1`) |
+| GP0 | S3 | right IR DO in USB-only console builds. Disconnect sensor before using UART0 console or crash reporting. |
 | GP1 | | (taken whenever the team builds with `CRASH_REPORT=1`) |
 | GP2 | | |
 | GP3 | | |
@@ -72,7 +72,7 @@ fixed.
 | GP21 | | |
 | GP22 | | |
 | GP26 | | (ADC0 capable) |
-| GP27 | | (ADC1 capable) |
+| GP27 | S3 | left IR DO |
 | GP28 | | (ADC2 capable) |
 
 ## 3. Peripherals
@@ -111,6 +111,7 @@ the drivers have no locking to stop it.
 | SPI0 | | | |
 | SPI1 | | | |
 | ADC | | | GP26–GP28 |
+| GPIO bank 0 IRQ | S3 | ir_task installs the shared handler on core 0 | GP27, GP0 |
 | PWM slices (list) | | | |
 | WiFi radio, TCP/IP, MQTT | *kernel* | `cyw43_utk_task` (built in) | GP23–25, GP29 |
 
@@ -148,7 +149,7 @@ change it only by team agreement. Write down every task you create.
 |---|---|---|
 | 1 | 12–13 | *example:* led_task – 12 – any |
 | 2 | 14–15 | *example:* producer_task – 14 – core 1 |
-| 3 | 16–17 | *example:* consumer_task – 16 – core 0 |
+| 3 | 16–17 | ir_task – 16 – core 0 |
 | 4 | 18–19 | *example:* monitor_task – 18 – any |
 | 5 | 20–21 | |
 
