@@ -11,7 +11,7 @@
 Installed_IR installed_ir_sensors = {
   .front_left  = { .gpio = 27u, .is_digital = true },
   .front_right = { .gpio = 0u, .is_digital = true },
-  .barcode     = { .gpio = 30u, .is_digital = true }
+  .barcode     = { .gpio = 6u, .is_digital = true }
 };
 
 ID ir_event_flag_id;
@@ -33,6 +33,16 @@ EXPORT ER subsystem3_init(void)
   if (err != E_OK) {
     return err;
   }
+
+  // Configure the barcode module's digital output as a Pico input.
+  err = gpio_set_pin(installed_ir_sensors.barcode.gpio, GPIO_MODE_IN);
+  if (err != E_OK) {
+    return err;
+  }
+
+  // Temporary boot log to check barcode polarity.
+  tm_printf((const UB *)"barcode=%u\n",
+            gpio_get_val(installed_ir_sensors.barcode.gpio));
 
   // Create the lock that protects each saved reading and timestamp
   const T_CMTX lock_settings = { .mtxatr = TA_INHERIT };
