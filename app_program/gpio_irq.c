@@ -17,7 +17,6 @@
 #define GPIO_IRQ_NVIC_LEVEL (2)
 
 static gpio_irq_cb_t g_callbacks[GPIO_IRQ_PIN_COUNT];
-static uint32_t      g_event_masks[GPIO_IRQ_PIN_COUNT];
 
 static void gpio_irq_bank0_isr (UINT intno);
 
@@ -51,8 +50,7 @@ int32_t gpio_irq_register (uint32_t gpio, uint32_t events, gpio_irq_cb_t callbac
   ) {
     /* Publish the callback before the pin can fire. */
     DI(interrupt_state);
-    g_callbacks[gpio]   = callback;
-    g_event_masks[gpio] = events;
+    g_callbacks[gpio] = callback;
     EI(interrupt_state);
 
     hal_gpio_irq_enable(gpio, events);
@@ -78,7 +76,7 @@ static void gpio_irq_bank0_isr (UINT intno)
   {
     if (NULL != g_callbacks[gpio])
     {
-      uint32_t events = hal_gpio_irq_take_events(gpio, g_event_masks[gpio]);
+      uint32_t events = hal_gpio_irq_take_events(gpio);
 
       if (0u != events)
       {

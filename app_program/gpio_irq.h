@@ -16,7 +16,7 @@
 #define GPIO_IRQ_H
 
 #include <stdint.h>
-
+#include "robot_hal.h"
 
 /**
  * @brief Callback run in INTERRUPT context when a registered pin fires.

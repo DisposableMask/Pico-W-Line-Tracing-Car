@@ -8,6 +8,6 @@
 #define HAL_IRQ_IO_BANK0   (13u)
 
 void hal_gpio_irq_enable(uint32_t pin, uint32_t events);
-uint32_t hal_gpio_irq_take_events(uint32_t pin, uint32_t mask);
+uint32_t hal_gpio_irq_take_events(uint32_t gpio);
 
 #endif
