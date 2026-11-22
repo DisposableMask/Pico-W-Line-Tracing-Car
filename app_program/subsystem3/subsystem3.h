@@ -30,14 +30,9 @@ typedef struct installed_ir_t {
 extern Installed_IR installed_ir_sensors;
 
 typedef struct ir_snapshot_t {
-  IR sensor;
+  uint16_t reading;
   uint32_t timestamp;
 } IR_Snapshot;
-
-// Helper to compare struct sensors
-static inline bool is_ir_equal(const IR A, const IR B) {
-  return (A.gpio == B.gpio) && (A.is_digital == B.is_digital);
-}
 
 
 /* Add IR reading type and getter here once interface is ready */

@@ -25,13 +25,13 @@ EXPORT ER subsystem3_init(void)
   }
 
   // Initialise pin, return status
-  return gpio_set_pin(installed_ir_sensors.front_right.gpio, GPIO_MODE_IN);
+  err = gpio_set_pin(installed_ir_sensors.front_right.gpio, GPIO_MODE_IN);
+  if (err != E_OK) {
+    return err;
+  }
 }
 
 EXPORT ER subsystem3_start(void)
 {
-  // Temporary Success Log
-  tm_printf((const UB *)"c::subsystem3_start()");
-
   return ir_bench_start();
 }

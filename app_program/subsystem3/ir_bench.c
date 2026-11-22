@@ -1,25 +1,21 @@
 #include "subsystem3.h"
 #include <sys/machine.h>
 
+static IR_Snapshot fl_last_state;
+static IR_Snapshot fr_last_state;
+
 static void ir_bench_task(INT stacd, void *exinf)
 {
   (void)stacd;
   (void)exinf;
 
-  IR_Snapshot fl_last_state = {
-    .sensor = installed_ir_sensors.front_left
-  };
-
-  IR_Snapshot fr_last_state = {
-    .sensor = installed_ir_sensors.front_right
-  };
 
   const UW initial_levels = in_w(GPIO_IN);
   const uint32_t start_time = in_w(TIMER_TIMERAWL);
 
   // bitmask gpio pins to get ir sensor gpio pin, read value
-  fl_last_state.sensor.reading = (uint16_t)(initial_levels >> fl_last_state.sensor.gpio) & 1u;
-  fr_last_state.sensor.reading = (uint16_t)(initial_levels >> fr_last_state.sensor.gpio) & 1u;
+  fl_last_state.reading = (uint16_t)(initial_levels >> installed_ir_sensors.front_left.gpio) & 1u;
+  fr_last_state.reading = (uint16_t)(initial_levels >> installed_ir_sensors.front_right.gpio) & 1u;
 
   fl_last_state.timestamp = start_time;
   fr_last_state.timestamp = start_time;
@@ -42,12 +38,9 @@ static void ir_bench_task(INT stacd, void *exinf)
     front_left.reading = (uint16_t)(levels >> front_left.gpio) & 1u;
     front_right.reading = (uint16_t)(levels >> front_right.gpio) & 1u;
 
-    if (
-      is_ir_equal(front_left, fl_last_state.sensor) &&
-      front_left.reading != fl_last_state.sensor.reading
-    ) {
+    if (front_left.reading != fl_last_state.reading) {
       const uint32_t elapsed_time = sampled_timestamp - fl_last_state.timestamp;
-      fl_last_state.sensor.reading = front_left.reading;
+      fl_last_state.reading = front_left.reading;
       fl_last_state.timestamp = sampled_timestamp;
 
       // print it to serial monitor
@@ -59,12 +52,9 @@ static void ir_bench_task(INT stacd, void *exinf)
       );
     }
 
-    if (
-      is_ir_equal(front_right, fr_last_state.sensor) &&
-      front_right.reading != fr_last_state.sensor.reading
-    ) {
+    if (front_right.reading != fr_last_state.reading) {
       const uint32_t elapsed_time = sampled_timestamp - fr_last_state.timestamp;
-      fr_last_state.sensor.reading = front_right.reading;
+      fr_last_state.reading = front_right.reading;
       fr_last_state.timestamp = sampled_timestamp;
       // print it to serial monitor
       tm_printf(
