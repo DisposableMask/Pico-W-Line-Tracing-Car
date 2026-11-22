@@ -11,10 +11,11 @@
 Installed_IR installed_ir_sensors = {
   .front_left  = { .gpio = 27u, .is_digital = true },
   .front_right = { .gpio = 0u, .is_digital = true },
-  .barcode     = { .gpio = 30u, .is_digital = true }
+  .barcode     = { .gpio = 6u, .is_digital = true }
 };
 
 ID ir_event_flag_id;
+ID barcode_edge_flag_id;
 ID ir_snapshot_lock_id;
 
 EXPORT ER subsystem3_init(void)
@@ -30,6 +31,12 @@ EXPORT ER subsystem3_init(void)
 
   // Initialise pin, return status
   err = gpio_set_pin(installed_ir_sensors.front_right.gpio, GPIO_MODE_IN);
+  if (err != E_OK) {
+    return err;
+  }
+
+  // Configure the barcode module's digital output as a Pico input.
+  err = gpio_set_pin(installed_ir_sensors.barcode.gpio, GPIO_MODE_IN);
   if (err != E_OK) {
     return err;
   }
@@ -51,6 +58,19 @@ EXPORT ER subsystem3_init(void)
 
     return ir_event_flag_id;
   }
+
+  // Give barcode edges their own flag so they don't wake the front IR worker.
+  barcode_edge_flag_id = tk_cre_flg(&event_settings);
+  if (barcode_edge_flag_id < E_OK) {
+    (void)tk_del_flg(ir_event_flag_id);
+    (void)tk_del_mtx(ir_snapshot_lock_id);
+
+    ir_event_flag_id = 0;
+    ir_snapshot_lock_id = 0;
+
+    return barcode_edge_flag_id;
+  }
+
   return E_OK;
 }
 
@@ -82,6 +102,11 @@ static void ir_worker_on_core0(INT start_code, void *task_context)
     );
   }
 
+  // Route both barcode pin edges to the barcode callback.
+  if (err == E_OK) {
+    err = gpio_irq_register(installed_ir_sensors.barcode.gpio, both_edges, barcode_pin_changed);
+  }
+
   // Request the initial sample even if neither pin changes at boot.
   if (err == E_OK) {
     err = tk_set_flg(ir_event_flag_id, IR_SAMPLE_REQUESTED);
@@ -103,6 +128,13 @@ EXPORT ER subsystem3_start(void)
   if (ir_event_flag_id <= 0) {
 
     return E_OBJ;
+  }
+
+  // Start the barcode task on the same core that handles its GPIO interrupts.
+  ID barcode_task_id =
+      app_start_task(barcode_reading_task, S3_PRI_MAIN, TP_PRC1, "barcode");
+  if (barcode_task_id < E_OK) {
+    return barcode_task_id;
   }
 
   ID worker_task_id = app_start_task(ir_worker_on_core0, S3_PRI_MAIN, TP_PRC1, "ir_bench");
