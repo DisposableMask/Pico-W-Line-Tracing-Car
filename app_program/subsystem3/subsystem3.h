@@ -41,6 +41,8 @@ typedef struct ir_snapshot_t {
 
 extern ID ir_event_flag_id;
 extern ID barcode_edge_flag_id;
+void barcode_pin_changed(uint32_t gpio, uint32_t edges);
+void barcode_reading_task(INT start_code, void *task_context);
 extern ID ir_snapshot_lock_id;
 
 void ir_bench_task(INT start_code, void *task_context);

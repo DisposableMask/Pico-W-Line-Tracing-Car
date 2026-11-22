@@ -81,12 +81,6 @@ static void ir_pin_changed(uint32_t gpio, uint32_t edges)
   (void)tk_set_flg(ir_event_flag_id, IR_SAMPLE_REQUESTED);
 }
 
-static void barcode_pin_changed(uint32_t gpio, uint32_t edges)
-{
-  (void)gpio;
-  (void)tk_set_flg(barcode_edge_flag_id, edges);
-}
-
 static void ir_worker_on_core0(INT start_code, void *task_context)
 {
   const uint32_t both_edges = HAL_GPIO_EDGE_RISE | HAL_GPIO_EDGE_FALL;
@@ -134,6 +128,13 @@ EXPORT ER subsystem3_start(void)
   if (ir_event_flag_id <= 0) {
 
     return E_OBJ;
+  }
+
+  // Start the barcode task on the same core that handles its GPIO interrupts.
+  ID barcode_task_id =
+      app_start_task(barcode_reading_task, S3_PRI_MAIN, TP_PRC1, "barcode");
+  if (barcode_task_id < E_OK) {
+    return barcode_task_id;
   }
 
   ID worker_task_id = app_start_task(ir_worker_on_core0, S3_PRI_MAIN, TP_PRC1, "ir_bench");
