@@ -20,7 +20,7 @@ static void ir_bench_task(INT stacd, void *exinf)
         tm_printf((const UB *)"left=%u right=%u\n",
                   (UINT)((levels >> IR_LEFT_PIN) & 1u),
                   (UINT)((levels >> IR_RIGHT_PIN) & 1u));
-        tk_dly_tsk(200);
+        tk_dly_tsk(10);
     }
 }
 
