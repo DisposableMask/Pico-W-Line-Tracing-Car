@@ -11,6 +11,9 @@
 
 #include "../app.h"
 
+#define S3_PRI_MAIN 16
+
 /* Add IR reading type and getter here once interface is ready */
+ER ir_bench_start(void);
 
 #endif /* SUBSYSTEM3_H */

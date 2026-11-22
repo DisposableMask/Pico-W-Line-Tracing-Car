@@ -7,6 +7,8 @@
 
 #include "subsystem3.h"
 
+ER ir_bench_start(void);
+
 EXPORT ER subsystem3_init(void)
 {
   /* Set up IR driver and shared reading here */
@@ -19,5 +21,6 @@ EXPORT ER subsystem3_start(void)
 {
   // Temporary Success Log
   tm_printf((const UB *)"c::subsystem3_start()");
-  return E_OK;
+
+  return ir_bench_start();
 }
