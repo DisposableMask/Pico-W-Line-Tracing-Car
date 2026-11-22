@@ -96,11 +96,6 @@ EXPORT INT usermain(void)
 {
 	T_RVER	ver;
 
-  for(;;) {
-    tm_printf((const UB *)"Hello World!\n");
-    tk_dly_tsk(1000);
-  }
-
 	/* tk_ref_ver: ask the kernel who it is */
 	tk_ref_ver(&ver);
 	tm_printf((UB*)"\n=== micro T-Kernel on Raspberry Pi Pico W"
@@ -114,7 +109,7 @@ EXPORT INT usermain(void)
 
 	/* Phase 1: every subsystem creates its kernel objects */
 	CHECK(subsystem1_init(), "subsystem1_init");
-	CHECK(subsystem2_init(), "subsystem2_init");
+  CHECK(subsystem2_init(), "subsystem2_init");
 	CHECK(subsystem3_init(), "subsystem3_init");
 	CHECK(subsystem4_init(), "subsystem4_init");
 	CHECK(subsystem5_init(), "subsystem5_init");
