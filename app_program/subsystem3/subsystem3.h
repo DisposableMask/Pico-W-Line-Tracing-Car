@@ -13,6 +13,18 @@
 
 #define S3_PRI_MAIN 16
 
+typedef struct ir_sensor_t {
+  const uint8_t gpio;
+  const bool is_digital;
+  uint16_t reading;
+} IR;
+
+typedef struct installed_ir_t {
+  IR front_left;
+  IR front_right;
+  IR barcode;
+} Installed_IR;
+
 /* Add IR reading type and getter here once interface is ready */
 ER ir_bench_start(void);
 
