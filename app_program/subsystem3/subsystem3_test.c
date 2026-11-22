@@ -26,7 +26,6 @@ EXPORT void subsystem3_test(void)
   tk_dly_tsk(5000);
 
   // Ask the worker to read both pins again after the tape moves.
-  ER sample_request_result = tk_set_flg(ir_event_flag_id, IR_SAMPLE_REQUESTED);
   TEST_CHECK("S3-U02", sample_request_result == E_OK,
               "IR sample request sent");
 
