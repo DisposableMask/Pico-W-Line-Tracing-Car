@@ -1,5 +1,18 @@
 #include "subsystem3.h"
 
+ER ir_init(void);
+ER ir_start(void);
+
+EXPORT ER subsystem3_init(void)
+{
+    return ir_init();
+}
+
+EXPORT ER subsystem3_start(void)
+{
+    return ir_start();
+}
+
 ir_steering_t ir_steering_decision(const ir_snapshot_t *snapshot)
 {
     if (snapshot == NULL || !snapshot->valid) {

@@ -111,7 +111,7 @@ static void ir_task(INT stacd, void *exinf)
 }
 #endif
 
-EXPORT ER subsystem3_init(void)
+ER ir_init(void)
 {
 #if !TM_CONSOLE_UART
     const T_CFLG flag = {0};
@@ -131,7 +131,7 @@ EXPORT ER subsystem3_init(void)
     return E_OK;
 }
 
-EXPORT ER subsystem3_start(void)
+ER ir_start(void)
 {
 #if TM_CONSOLE_UART
     tm_printf((const UB *)"[IR] disabled: right sensor GP0 is used by UART0\n");
