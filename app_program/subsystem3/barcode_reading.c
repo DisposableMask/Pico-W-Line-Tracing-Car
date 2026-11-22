@@ -74,8 +74,11 @@ void barcode_reading_task(INT start_code, void *task_context)
   (void)task_context;
 
   const UINT wake_flags = HAL_GPIO_EDGE_RISE | HAL_GPIO_EDGE_FALL | BARCODE_EDGE_LOST;
-  uint32_t black_started_at = 0;
-  bool measuring_black = false;
+
+  uint32_t widths_us[9];
+  uint32_t previous_edge_at = 0;
+  unsigned int width_count = 0;
+  bool capturing = false;
 
   for (;;) {
     UINT received_edges;
@@ -97,15 +100,42 @@ void barcode_reading_task(INT start_code, void *task_context)
         black_started_at = edge.timestamp;
         measuring_black = true;
       } else if (measuring_black) {
-        const uint32_t width_us = edge.timestamp - black_started_at;
-        measuring_black = false;
-        tm_printf((const UB *)"[Barcode] black_width_us=%u\n", (UINT)width_us);
+        
+      // Start the character on an edge into black.
+      if (!capturing) {
+        if (is_black) {
+          previous_edge_at = edge.timestamp;
+          width_count = 0;
+          capturing = true;
+        }
+        continue;
+      }
+
+      // The first bar must end on white. Later edges must alternate.
+      const bool expected_black = (width_count % 2u) != 0u;
+      if (is_black != expected_black) {
+        capturing = false;
+        continue;
+      }
+
+      widths_us[width_count++] = edge.timestamp - previous_edge_at;
+      previous_edge_at = edge.timestamp;
+
+      // Print only after all nine widths are captured.
+      if (width_count == 9u) {
+        for (unsigned int i = 0; i < width_count; ++i) {
+          tm_printf((const UB *)"[Barcode] width[%u] %s=%u us\n",
+                    (UINT)i, (i % 2u == 0u) ? "black" : "white",
+                    (UINT)widths_us[i]);
+        }
+        capturing = false;
       }
     }
 
-    // Drop an unfinished bar so the next white edge can't finish it.
+    // Discard the partial character if any edge was lost.
     if (edge_lost) {
-      measuring_black = false;
+      capturing = false;
+      width_count = 0;
       tm_printf((const UB *)"[Barcode] Edge lost. Capture discarded.\n");
     }
   }
