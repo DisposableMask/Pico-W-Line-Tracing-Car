@@ -99,7 +99,7 @@ ER ir_get_snapshot(ir_snapshot_t *out)
 #endif
 }
 
-EXPORT ER subsystem3_init(void)
+ER ir_init(void)
 {
 #if !TM_CONSOLE_UART
     const T_CMTX mutex = { .mtxatr = TA_INHERIT };
@@ -128,7 +128,7 @@ EXPORT ER subsystem3_init(void)
     return E_OK;
 }
 
-EXPORT ER subsystem3_start(void)
+ER ir_start(void)
 {
 #if TM_CONSOLE_UART
     return E_OK;
