@@ -28,3 +28,7 @@ config/wifi_secrets.h
 
 # VScode
 .vscode/*
+
+# FOTA Related
+*.bat
+tools/pico_fota/picotool
